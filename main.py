@@ -4,7 +4,7 @@ import os
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from data_utils import Dataset_train, Dataset_eval
+from data_utils import Dataset_train, Dataset_eval, Dataset_eval_in_the_wild
 from model import Model
 from utils import reproducibility
 from utils import read_metadata
@@ -47,7 +47,7 @@ def produce_evaluation_file(dataset, model, device, save_path):
     score_list = []
     text_list = []
 
-    for batch_x,utt_id in data_loader:
+    for batch_x,utt_id in tqdm(data_loader):
         batch_x = batch_x.to(device)
         batch_out, _ = model(batch_x)
         batch_score = (batch_out[:, 1]
@@ -99,7 +99,7 @@ def train_epoch(train_loader, model, lr,optim, device):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Conformer-W2V')
     # Dataset
-    parser.add_argument('--database_path', type=str, default='ASVspoof_database/', help='Change this to user\'s full directory address of LA database (ASVspoof2019- for training & development (used as validation), ASVspoof2021 for evaluation scores). We assume that all three ASVspoof 2019 LA train, LA dev and ASVspoof2021 LA eval data folders are in the same database_path directory.')
+    parser.add_argument('--database_path', type=str, default='/home/share/for_minhvu/train_data/asvspoof2019/', help='Change this to user\'s full directory address of LA database (ASVspoof2019- for training & development (used as validation), ASVspoof2021 for evaluation scores). We assume that all three ASVspoof 2019 LA train, LA dev and ASVspoof2021 LA eval data folders are in the same database_path directory.')
     '''
     % database_path/
     %      |- ASVspoof2021_LA_eval/wav
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     %      |- ASVspoof2021_DF_eval/wav
     '''
 
-    parser.add_argument('--protocols_path', type=str, default='ASVspoof_database/', help='Change with path to user\'s LA database protocols directory address')
+    parser.add_argument('--protocols_path', type=str, default='/home/share/for_minhvu/train_data/asvspoof2019/', help='Change with path to user\'s LA database protocols directory address')
     '''
     % protocols_path/
     %   |- ASVspoof_LA_cm_protocols
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss', type=str, default='WCE')
 
     #model parameters
-    parser.add_argument('--emb-size', type=int, default=144, metavar='N',
+    parser.add_argument('--emb_size', type=int, default=144, metavar='N',
                     help='embedding size')
     parser.add_argument('--heads', type=int, default=4, metavar='N',
                     help='heads of the conformer encoder')
@@ -148,6 +148,10 @@ if __name__ == '__main__':
     #Train
     parser.add_argument('--train', default=True, type=lambda x: (str(x).lower() in ['true', 'yes', '1']),
                     help='Whether to train the model')
+    parser.add_argument('--dataset_train', default='asv19', type=str,
+                    help='Dataset to train model')      
+    parser.add_argument('--finetune', default=False, type=lambda x: (str(x).lower() in ['true', 'yes', '1']),
+                    help='Whether to finetune the model')      
     #Eval
     parser.add_argument('--n_mejores_loss', type=int, default=5, help='save the n-best models')
     parser.add_argument('--average_model', default=True, type=lambda x: (str(x).lower() in ['true', 'yes', '1']),
@@ -222,8 +226,7 @@ if __name__ == '__main__':
     prefix_2021 = 'ASVspoof2021.{}'.format(track)
     
     #define model saving path
-    model_tag = 'Conformer_w_TCM_{}_{}_{}_ES{}_H{}_NE{}_KS{}_AUG{}_w_sin_pos'.format(
-        track, args.loss, args.lr,args.emb_size, args.heads, args.num_encoders, args.kernel_size, args.algo)
+    model_tag = 'Ebranchformer'
     if args.comment:
         model_tag = model_tag + '_{}'.format(args.comment)
     model_save_path = os.path.join('models', model_tag)
@@ -253,25 +256,63 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,weight_decay=args.weight_decay)
      
     # define train dataloader
-    label_trn, files_id_train = read_metadata( dir_meta =  os.path.join(args.protocols_path+'LA/{}_cm_protocols/{}.cm.train.trn.txt'.format(prefix,prefix_2019)), is_eval=False)
-    print('no. of training trials',len(files_id_train))
-    
-    train_set=Dataset_train(args,list_IDs = files_id_train,labels = label_trn,base_dir = os.path.join(args.database_path+'LA/{}_{}_train/'.format(prefix_2019.split('.')[0],args.track)),algo=args.algo)
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers = 10, shuffle=True,drop_last = True)
-    
-    del train_set, label_trn
-    
-    # define validation dataloader
-    labels_dev, files_id_dev = read_metadata( dir_meta =  os.path.join(args.protocols_path+'LA/{}_cm_protocols/{}.cm.dev.trl.txt'.format(prefix,prefix_2019)), is_eval=False)
-    print('no. of validation trials',len(files_id_dev))
+    if args.dataset_train == "asv19":
+        label_trn, files_id_train = read_metadata(dir_meta = os.path.join(args.protocols_path+'LA/ASVspoof2019_LA_cm_protocols/{}.cm.train.trn.txt'.format(prefix_2019)), is_eval=False)
+        print('no. of training trials',len(files_id_train))
+        
+        train_set=Dataset_train(args,list_IDs = files_id_train,labels = label_trn,base_dir = os.path.join(args.database_path+'LA/{}_{}_train/'.format(prefix_2019.split('.')[0],args.track)),algo=args.algo)
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers = 10, shuffle=True,drop_last = True)
+        
+        del train_set, label_trn
+        
+        # define validation dataloader
+        labels_dev, files_id_dev = read_metadata(dir_meta = os.path.join(args.protocols_path+'LA/ASVspoof2019_LA_cm_protocols/{}.cm.dev.trl.txt'.format(prefix_2019)), is_eval=False)
+        print('no. of validation trials',len(files_id_dev))
 
-    dev_set = Dataset_train(args,list_IDs = files_id_dev,
-		    labels = labels_dev,
-		    base_dir = os.path.join(args.database_path+'LA/{}_{}_dev/'.format(prefix_2019.split('.')[0],args.track)), algo=args.algo)
+        dev_set = Dataset_train(args,list_IDs = files_id_dev,
+                labels = labels_dev,
+                base_dir = os.path.join(args.database_path+'LA/{}_{}_dev/'.format(prefix_2019.split('.')[0],args.track)), algo=args.algo)
 
-    dev_loader = DataLoader(dev_set, batch_size=8, num_workers=10, shuffle=False)
-    del dev_set,labels_dev
+        dev_loader = DataLoader(dev_set, batch_size=8, num_workers=10, shuffle=False)
+        del dev_set,labels_dev
+    elif args.dataset_train == "asv15":
+        label_trn, files_id_train = read_metadata15(dir_meta = "/home/share/for_minhvu/train_data/asvspoof2015/CM_protocol/cm_train.trn", is_eval=False)
+        print('no. of training trials',len(files_id_train))
+        
+        train_set=Dataset_train15(args,list_IDs = files_id_train,labels = label_trn,base_dir = "/home/share/for_minhvu/train_data/asvspoof2015/",algo=args.algo)
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers = 10, shuffle=True,drop_last = True)
+        
+        del train_set, label_trn
+        
+        # define validation dataloader
+        labels_dev, files_id_dev = read_metadata15(dir_meta = "/home/share/for_minhvu/train_data/asvspoof2015/CM_protocol/cm_develop.ndx", is_eval=False)
+        print('no. of validation trials',len(files_id_dev))
 
+        dev_set = Dataset_train15(args,list_IDs = files_id_dev,
+                labels = labels_dev,
+                base_dir = "/home/share/for_minhvu/train_data/asvspoof2015/", algo=args.algo)
+
+        dev_loader = DataLoader(dev_set, batch_size=8, num_workers=10, shuffle=False)
+        del dev_set,labels_dev
+    if args.dataset_train == "asv5":
+        label_trn, files_id_train = read_metadata5(dir_meta = "/home/data/ASVspoof5/ASVspoof5.train.tsv", is_eval=False)
+        print('no. of training trials',len(files_id_train))
+        
+        train_set=Dataset_train5(args,list_IDs = files_id_train,labels = label_trn,base_dir = "/home/data/ASVspoof5/flac_T/",algo=args.algo)
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers = 10, shuffle=True,drop_last = True)
+        
+        del train_set, label_trn
+        
+        # define validation dataloader
+        labels_dev, files_id_dev = read_metadata5(dir_meta = "/home/data/ASVspoof5/ASVspoof5.dev.track_1.tsv", is_eval=False)
+        print('no. of validation trials',len(files_id_dev))
+
+        dev_set = Dataset_train5(args,list_IDs = files_id_dev,
+                labels = labels_dev,
+                base_dir = "/home/data/ASVspoof5/flac_D/", algo=args.algo)
+
+        dev_loader = DataLoader(dev_set, batch_size=8, num_workers=10, shuffle=False)
+        del dev_set,labels_dev
     
     ##################### Training and validation #####################
     num_epochs = args.num_epochs
@@ -328,10 +369,12 @@ if __name__ == '__main__':
         torch.save(model.state_dict(), os.path.join(best_save_path, 'avg_5_best_{}.pth'.format(i)))
         print('Model loaded average of {} best models in {}'.format(args.n_average_model, best_save_path))
     else:
-        model.load_state_dict(torch.load(os.path.join(model_save_path, 'best.pth')))
-        print('Model loaded : {}'.format(os.path.join(model_save_path, 'best.pth')))
+        model.load_state_dict(torch.load("/home/stud_dat/KAN_MoE/tcm_add/models/Ebranchformer_TCM/best/avg_5_best_4.pth"))
 
-    eval_tracks=['LA', 'DF']
+    if args.algo == 5:
+        eval_tracks=['LA21', 'ITW']
+    elif args.algo == 3:
+        eval_tracks=['DF21']
     if args.comment_eval:
         model_tag = model_tag + '_{}'.format(args.comment_eval)
 
@@ -340,10 +383,30 @@ if __name__ == '__main__':
             prefix      = 'ASVspoof_{}'.format(tracks)
             prefix_2019 = 'ASVspoof2019.{}'.format(tracks)
             prefix_2021 = 'ASVspoof2021.{}'.format(tracks)
-
-            file_eval = read_metadata( dir_meta =  os.path.join(args.protocols_path+'{}/{}_cm_protocols/{}.cm.eval.trl.txt'.format(tracks, prefix,prefix_2021)), is_eval=True)
-            print('no. of eval trials',len(file_eval))
-            eval_set=Dataset_eval(list_IDs = file_eval,base_dir = os.path.join(args.database_path+'{}/ASVspoof2021_{}_eval/'.format(tracks,tracks)),track=tracks)
-            produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
+            if tracks == "LA21":
+                file_eval = read_metadata(dir_meta = "/home/share/for_minhvu/train_data/ASVspoof2021/ASVspoof2021_LA_eval/ASVspoof2021.LA.cm.eval.trl.txt", is_eval=True)
+                print('no. of eval trials',len(file_eval))
+                eval_set=Dataset_eval(list_IDs = file_eval,base_dir = "/home/share/for_minhvu/train_data/ASVspoof2021/ASVspoof2021_LA_eval/", track=tracks)
+                produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
+            elif tracks == "DF21":
+                file_eval = read_metadata(dir_meta = "/home/share/for_minhvu/train_data/ASVspoof2021/ASVspoof2021_DF_eval/ASVspoof2021.DF.cm.eval.trl.txt", is_eval=True)
+                print('no. of eval trials',len(file_eval))
+                eval_set=Dataset_eval(list_IDs = file_eval,base_dir = "/home/share/for_minhvu/train_data/ASVspoof2021/ASVspoof2021_DF_eval/", track=tracks)
+                produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
+            elif tracks == "ITW":
+                file_eval = read_metadata(dir_meta = "/home/stud_dat/tcm_add/data/in_the_wild/dataset.txt", is_eval=True)
+                eval_set=Dataset_eval_in_the_wild(list_IDs = file_eval,base_dir = "/home/share/for_ptuandat/audio_deepfake_test/in_the_wild/",track=tracks)
+                print('no. of eval trials',len(file_eval))
+                produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
+            elif tracks == "LA15":
+                file_eval = read_metadata15(dir_meta = "/home/share/for_minhvu/train_data/asvspoof2015/CM_protocol/cm_evaluation.ndx", is_eval=True)
+                print('no. of eval trials',len(file_eval))
+                eval_set=Dataset_eval15(list_IDs = file_eval,base_dir = "/home/share/for_minhvu/train_data/asvspoof2015/", track=tracks)
+                produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
+            elif tracks == "LA19":
+                file_eval = read_metadata(dir_meta = "/home/share/for_minhvu/train_data/asvspoof2019/LA/ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt", is_eval=True)
+                print('no. of eval trials',len(file_eval))
+                eval_set=Dataset_eval(list_IDs = file_eval,base_dir = "/home/share/for_minhvu/train_data/asvspoof2019/LA/ASVspoof2019_LA_eval/", track=tracks)
+                produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
         else:
             print('Score file already exists')

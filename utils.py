@@ -20,13 +20,57 @@ def read_metadata(dir_meta, is_eval=False):
          l_meta = f.readlines()
     
     if (is_eval):
+        if "ASVspoof2019.LA.cm.eval.trl.txt" in dir_meta:
+            for line in l_meta:
+                _,key,_,_,label = line.strip().split()
+                file_list.append(key)
+            return file_list
+        else:
+            for line in l_meta:
+                key= line.strip()
+                file_list.append(key)
+            return file_list
+    else:
         for line in l_meta:
-            key= line.strip()
+             _,key,_,_,label = line.strip().split()
+             
+             file_list.append(key)
+             d_meta[key] = 1 if label == 'bonafide' else 0
+        return d_meta,file_list
+
+def read_metadata15(dir_meta, is_eval=False):
+    d_meta = {}
+    file_list=[]
+    with open(dir_meta, 'r') as f:
+         l_meta = f.readlines()
+    
+    if (is_eval):
+        for line in l_meta:
+            id,key,_,_= line.strip().split(" ")
+            file_list.append(id + '/' + key)
+        return file_list
+    else:
+        for line in l_meta:
+             _,key,_,label = line.strip().split()
+             
+             file_list.append(key)
+             d_meta[key] = 1 if label == 'human' else 0
+        return d_meta,file_list
+
+def read_metadata5(dir_meta, is_eval=False):
+    d_meta = {}
+    file_list=[]
+    with open(dir_meta, 'r') as f:
+         l_meta = f.readlines()
+    
+    if (is_eval):
+        for line in l_meta:
+            _,key,_,_,_,_,_,_,label,_= line.strip().split()
             file_list.append(key)
         return file_list
     else:
         for line in l_meta:
-             _,key,_,_,label = line.strip().split()
+             _,key,_,_,_,_,_,_,label,_ = line.strip().split()
              
              file_list.append(key)
              d_meta[key] = 1 if label == 'bonafide' else 0

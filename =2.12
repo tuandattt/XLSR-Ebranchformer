@@ -1,0 +1,13 @@
+Collecting scipy>=1.13.0
+  Downloading scipy-1.15.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (37.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 37.7/37.7 MB 36.1 MB/s eta 0:00:00
+Collecting pybind11
+  Downloading pybind11-3.0.1-py3-none-any.whl (293 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 293.6/293.6 kB 65.4 MB/s eta 0:00:00
+Requirement already satisfied: numpy<2.5,>=1.23.5 in /home/stud_dat/anaconda3/envs/xlsr_ebranchformer/lib/python3.10/site-packages (from scipy>=1.13.0) (2.1.2)
+Installing collected packages: scipy, pybind11
+  Attempting uninstall: scipy
+    Found existing installation: scipy 1.11.4
+    Uninstalling scipy-1.11.4:
+      Successfully uninstalled scipy-1.11.4
+Successfully installed pybind11-3.0.1 scipy-1.15.3
