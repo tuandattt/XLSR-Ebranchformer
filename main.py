@@ -295,21 +295,21 @@ if __name__ == '__main__':
         dev_loader = DataLoader(dev_set, batch_size=8, num_workers=10, shuffle=False)
         del dev_set,labels_dev
     if args.dataset_train == "asv5":
-        label_trn, files_id_train = read_metadata5(dir_meta = "/home/data/ASVspoof5/ASVspoof5.train.tsv", is_eval=False)
+        label_trn, files_id_train = read_metadata5(dir_meta = "/home/stud_dat/gated_attention_spoof/tcm_add/data/ASVspoof5.train.tsv", is_eval=False)
         print('no. of training trials',len(files_id_train))
         
-        train_set=Dataset_train5(args,list_IDs = files_id_train,labels = label_trn,base_dir = "/home/data/ASVspoof5/flac_T/",algo=args.algo)
+        train_set=Dataset_train5(args,list_IDs = files_id_train,labels = label_trn,base_dir = "/home/share/for_ptuandat/ASVspoof5/train/",algo=args.algo)
         train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers = 10, shuffle=True,drop_last = True)
         
         del train_set, label_trn
         
         # define validation dataloader
-        labels_dev, files_id_dev = read_metadata5(dir_meta = "/home/data/ASVspoof5/ASVspoof5.dev.track_1.tsv", is_eval=False)
+        labels_dev, files_id_dev = read_metadata5(dir_meta = "/home/stud_dat/gated_attention_spoof/tcm_add/data/ASVspoof5.dev.track_1.tsv", is_eval=False)
         print('no. of validation trials',len(files_id_dev))
 
         dev_set = Dataset_train5(args,list_IDs = files_id_dev,
                 labels = labels_dev,
-                base_dir = "/home/data/ASVspoof5/flac_D/", algo=args.algo)
+                base_dir = "/home/share/for_ptuandat/ASVspoof5/dev/", algo=args.algo)
 
         dev_loader = DataLoader(dev_set, batch_size=8, num_workers=10, shuffle=False)
         del dev_set,labels_dev
@@ -371,10 +371,13 @@ if __name__ == '__main__':
     else:
         model.load_state_dict(torch.load("/home/stud_dat/KAN_MoE/tcm_add/models/Ebranchformer_TCM/best/avg_5_best_4.pth"))
 
-    if args.algo == 5:
-        eval_tracks=['LA21', 'ITW']
-    elif args.algo == 3:
-        eval_tracks=['DF21']
+    if args.dataset_train == "asv5":
+        eval_tracks = ['LA5']
+    else:
+        if args.algo == 5:
+            eval_tracks=['LA21', 'ITW']
+        elif args.algo == 3:
+            eval_tracks=['DF21']
     if args.comment_eval:
         model_tag = model_tag + '_{}'.format(args.comment_eval)
 
@@ -398,10 +401,10 @@ if __name__ == '__main__':
                 eval_set=Dataset_eval_in_the_wild(list_IDs = file_eval,base_dir = "/home/share/for_ptuandat/audio_deepfake_test/in_the_wild/",track=tracks)
                 print('no. of eval trials',len(file_eval))
                 produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
-            elif tracks == "LA15":
-                file_eval = read_metadata15(dir_meta = "/home/share/for_minhvu/train_data/asvspoof2015/CM_protocol/cm_evaluation.ndx", is_eval=True)
+            elif tracks == "LA5":
+                file_eval = read_metadata5(dir_meta = "/home/stud_dat/gated_attention_spoof/tcm_add/data/ASVspoof5.eval.track_1.tsv", is_eval=True)
                 print('no. of eval trials',len(file_eval))
-                eval_set=Dataset_eval15(list_IDs = file_eval,base_dir = "/home/share/for_minhvu/train_data/asvspoof2015/", track=tracks)
+                eval_set=Dataset_eval5(list_IDs = file_eval, base_dir = "/home/share/for_ptuandat/ASVspoof5/eval/", track=tracks)
                 produce_evaluation_file(eval_set, model, device, 'Scores/{}/{}.txt'.format(tracks, model_tag))
             elif tracks == "LA19":
                 file_eval = read_metadata(dir_meta = "/home/share/for_minhvu/train_data/asvspoof2019/LA/ASVspoof2019_LA_cm_protocols/ASVspoof2019.LA.cm.eval.trl.txt", is_eval=True)
