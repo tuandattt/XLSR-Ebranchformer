@@ -1,3 +1,4 @@
 Scores/
 models/
 fairseq/
+__pycache__/
