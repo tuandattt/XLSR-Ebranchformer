@@ -127,11 +127,11 @@ class Dataset_train5(Dataset):
             X, fs = sf.read(self.base_dir + utt_id + '.flac')
         except:
             X, fs = librosa.load(self.base_dir + utt_id + '.flac', sr=16000)
-            Y=process_Rawboost_feature(X, fs, self.args, self.algo)
-            X_pad= pad(Y, self.cut)
-            x_inp= Tensor(X_pad)
-            target = self.labels[utt_id]
-            return x_inp, target
+        Y=process_Rawboost_feature(X, fs, self.args, self.algo)
+        X_pad= pad(Y, self.cut)
+        x_inp= Tensor(X_pad)
+        target = self.labels[utt_id]
+        return x_inp, target
         
 class Dataset_eval5(Dataset):
     def __init__(self, list_IDs, base_dir, track):
@@ -147,7 +147,7 @@ class Dataset_eval5(Dataset):
             X, fs = sf.read(self.base_dir + utt_id + '.flac')
         except:
             X, fs = librosa.load(self.base_dir + utt_id + '.flac', sr=16000)
-            X_pad = pad(X,self.cut)
-            x_inp = Tensor(X_pad)
-            return x_inp, utt_id
+        X_pad = pad(X,self.cut)
+        x_inp = Tensor(X_pad)
+        return x_inp, utt_id
 
