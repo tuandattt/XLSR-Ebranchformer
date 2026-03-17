@@ -11,49 +11,6 @@ import torch.nn.functional as F
 from MultiConvFormer import MultiConvolutionalSpatialGatingUnit, MultiConvolutionalGatingMLP
 from pooling import MultiHeadAttentionPooling
 
-try:
-    from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
-except ImportError:
-    RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
-
-def create_block(
-    d_model,
-    ssm_cfg=None,
-    norm_epsilon=1e-5,
-    rms_norm=False,
-    residual_in_fp32=False,
-    fused_add_norm=False,
-    layer_idx=None,
-    device=None,
-    dtype=None,
-    bidirectional=False,
-):
-    if ssm_cfg is None:
-        ssm_cfg = {}
-    factory_kwargs = {"device": device, "dtype": dtype}
-    mixer_cls = partial(Mamba, layer_idx=layer_idx, **ssm_cfg, **factory_kwargs)
-    norm_cls = partial(
-        nn.LayerNorm if not rms_norm else RMSNorm, eps=norm_epsilon, **factory_kwargs
-    )
-    if not bidirectional:
-        block = Block(
-            d_model,
-            mixer_cls,
-            norm_cls=norm_cls,
-            fused_add_norm=fused_add_norm,
-            residual_in_fp32=residual_in_fp32,
-        )
-    else:
-        block = BiBlock(
-            d_model,
-            mixer_cls,
-            norm_cls=norm_cls,
-            fused_add_norm=fused_add_norm,
-            residual_in_fp32=residual_in_fp32,
-        )
-    block.layer_idx = layer_idx
-    return block
-
 class Swish(nn.Module):
     def forward(self, x):
         return x * x.sigmoid()
@@ -275,8 +232,8 @@ class MultiHeadedAttention(nn.Module):
         self.dropout_rate = dropout_rate
 
         # LayerNorm for q and k
-        self.q_norm = LayerNorm(self.d_k) if qk_norm else nn.Identity()
-        self.k_norm = LayerNorm(self.d_k) if qk_norm else nn.Identity()
+        self.q_norm = nn.LayerNorm(self.d_k) if qk_norm else nn.Identity()
+        self.k_norm = nn.LayerNorm(self.d_k) if qk_norm else nn.Identity()
 
         self.use_flash_attn = use_flash_attn
         self.causal = causal  # only used with flash_attn
@@ -510,90 +467,6 @@ class TCMAttention(nn.Module):
 
         return x
 
-class FocalModulation(nn.Module):
-    def __init__(self, dim, focal_window=7, focal_level=4, focal_factor=2, bias=True, proj_drop=0., use_postln_in_modulation=False, normalize_modulator=False):
-        super().__init__()
-
-        self.dim = dim
-        self.focal_window = focal_window
-        self.focal_level = focal_level
-        self.focal_factor = focal_factor
-        self.use_postln_in_modulation = use_postln_in_modulation
-        self.normalize_modulator = normalize_modulator
-
-        self.f = nn.Linear(dim, 2*dim + (self.focal_level+1), bias=bias)
-        self.h = nn.Conv1d(dim, dim, kernel_size=1, stride=1, bias=bias)
-
-        self.act = nn.GELU()
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-        self.focal_layers = nn.ModuleList()
-                
-        self.kernel_sizes = []
-        for k in range(self.focal_level):
-            kernel_size = self.focal_factor*k + self.focal_window
-            self.focal_layers.append(
-                nn.Sequential(
-                    nn.Conv1d(dim, dim, kernel_size=kernel_size, stride=1, 
-                    groups=dim, padding=(kernel_size-1)//2, bias=False),
-                    nn.GELU(),
-                    )
-                )              
-            self.kernel_sizes.append(kernel_size)          
-        if self.use_postln_in_modulation:
-            self.ln = nn.LayerNorm(dim)
-
-    def forward(self, x):
-        """
-        Args:
-            x: input features with shape of (B, H, W, C)
-        """
-        B, T, C = x.shape
-
-        # Step 1: Linear projection to generate q, ctx, gates
-        x = self.f(x)  # (B, T, 2C + focal_level + 1)
-        
-        # Rearrange to (B, Channels, Time) for Conv1d
-        x = x.permute(0, 2, 1).contiguous()  # (B, 2C + L + 1, T)
-
-        # Split into q (query), ctx (context seed), gates
-        q, ctx, self.gates = torch.split(x, (C, C, self.focal_level + 1), dim=1)
-        # q: (B, C, T); ctx: (B, C, T); gates: (B, focal_level+1, T)
-
-        # Step 2: Hierarchical Multi-Level Context Aggregation
-        ctx_all = 0
-        ctx_l = ctx
-        for l in range(self.focal_level):
-            ctx_l = self.focal_layers[l](ctx_l)  # depthwise Conv1d
-            gate_l = self.gates[:, l:l+1, :]     # (B, 1, T)
-            ctx_all = ctx_all + ctx_l * gate_l   # gated aggregation
-
-        # Step 3: Global context: mean pooling over time
-        ctx_global = self.act(ctx_l.mean(dim=2, keepdim=True))  # (B, C, 1)
-        gate_global = self.gates[:, self.focal_level:, :]       # last gate
-        ctx_all = ctx_all + ctx_global * gate_global            # add global
-
-        # Step 4: Normalize if needed (optional)
-        if self.normalize_modulator:
-            ctx_all = ctx_all / (self.focal_level + 1)
-
-        # Step 5: Modulate query with aggregated context
-        modulator = self.h(ctx_all)     # 1x1 Conv1d to mix channels
-        x_out = q * modulator           # element-wise modulation
-
-        # Step 6: Permute back to (B, T, C)
-        x_out = x_out.permute(0, 2, 1).contiguous()
-
-        # Optional LayerNorm
-        if self.use_postln_in_modulation:
-            x_out = self.ln(x_out)
-
-        # Step 7: Final projection
-        x_out = self.proj(x_out)
-        x_out = self.proj_drop(x_out)
-        
-        return x_out    # (B, T, C)
-
 class DAFF(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.,
                  kernel_size=3, with_bn=True):
@@ -671,15 +544,15 @@ class EbranchformerBlock(torch.nn.Module):
         super().__init__()
 
         self.size = output_size
-        # self.attn = MultiHeadedAttention(
-        #     attention_heads,
-        #     output_size,
-        #     attention_dropout_rate,
-        #     qk_norm,
-        #     False,
-        #     False,
-        #     False,
-        # )
+        self.attn = MultiHeadedAttention(
+            attention_heads,
+            output_size,
+            attention_dropout_rate,
+            qk_norm,
+            False,
+            False,
+            False,
+        )
 
         #self.se = SEModule(output_size*2)
         activation = get_activation(ffn_activation_type)
@@ -724,7 +597,7 @@ class EbranchformerBlock(torch.nn.Module):
             self.ff_scale = 0.5
             self.norm_ff_macaron = nn.LayerNorm(output_size)
 
-        #self.norm_mha = nn.LayerNorm(output_size)  # for the MHA module
+        self.norm_mha = nn.LayerNorm(output_size)  # for the MHA module
         self.norm_mlp = nn.LayerNorm(output_size)  # for the MLP module
         self.norm_final = nn.LayerNorm(output_size)  # for the final output of the block
 
@@ -736,11 +609,11 @@ class EbranchformerBlock(torch.nn.Module):
 
         # self.weight_proj1 = torch.nn.Linear(self.size, 1)
         # self.weight_proj2 = torch.nn.Linear(self.size, 1)
-        self.merge_proj = torch.nn.Linear(self.size, self.size)
+        #self.merge_proj = torch.nn.Linear(self.size, self.size)
 
         self.depthwise_conv_fusion = torch.nn.Conv1d(
-            output_size,
-            output_size,
+            output_size*2,
+            output_size*2,
             kernel_size=merge_conv_kernel,
             stride=1,
             padding=(merge_conv_kernel - 1) // 2,
@@ -748,7 +621,7 @@ class EbranchformerBlock(torch.nn.Module):
             bias=True,
         )
 
-        #self.merge_proj = torch.nn.Linear(output_size + output_size, output_size)
+        self.merge_proj = torch.nn.Linear(output_size + output_size, output_size)
         
 
     def forward(self, x_input, mask, cache=None):
@@ -783,12 +656,12 @@ class EbranchformerBlock(torch.nn.Module):
         x2 = x
 
         # Branch 1: multi-headed attention module
-        # x1_norm = self.norm_mha(x1)
-        # x_att = self.attn(x1_norm, x1_norm, x1_norm, mask)
-        # #x_att = self.attn(x1_norm)
-        # # x_att, residual = self.attn(x1, None, inference_params=None)
+        x1_norm = self.norm_mha(x1)
+        x_att = self.attn(x1_norm, x1_norm, x1_norm, mask)
+        #x_att = self.attn(x1_norm)
+        # x_att, residual = self.attn(x1, None, inference_params=None)
 
-        # x1 = self.dropout(x_att)
+        x1 = self.dropout(x_att)
 
         # Branch 2: convolutional gating mlp
         x2 = self.norm_mlp(x2)
@@ -802,16 +675,17 @@ class EbranchformerBlock(torch.nn.Module):
         x2 = self.dropout(x2)
 
         #--- Merge two branches
-        # x_concat = torch.cat([x1, x2], dim=-1)
-        # cls_token, x_concat = torch.split(x_concat, [1, x_concat.size(1) - 1], dim=1)
-        # x_tmp = x_concat.transpose(1, 2)
-        # x_tmp = self.depthwise_conv_fusion(x_tmp)
-        # weight = self.pooling(x_tmp)
-        # x_tmp = x_tmp.transpose(1, 2)
-        # x_concat = torch.cat([cls_token, x_concat], dim=1)
-        # cls_token = cls_token * weight.transpose(1,2)
-        # x_tmp = torch.cat([cls_token, x_tmp], dim=1)
-        # x = x + self.dropout(self.merge_proj(x_concat + x_tmp))
+        x_concat = torch.cat([x1, x2], dim=-1)
+        cls_token, x_concat = torch.split(x_concat, [1, x_concat.size(1) - 1], dim=1)
+        x_tmp = x_concat.transpose(1, 2)
+        x_tmp = self.depthwise_conv_fusion(x_tmp)
+        #weight = self.pooling(x_tmp)
+        weight = x_tmp.mean(dim=-1, keepdim=True)
+        x_tmp = x_tmp.transpose(1, 2)
+        x_concat = torch.cat([cls_token, x_concat], dim=1)
+        cls_token = cls_token * weight.transpose(1,2)
+        x_tmp = torch.cat([cls_token, x_tmp], dim=1)
+        x = x + self.dropout(self.merge_proj(x_concat + x_tmp))
 
         #--- Weighted ave
         # score1 = self.pooling_proj1(x1).transpose(1, 2) / self.size**0.5
@@ -832,12 +706,12 @@ class EbranchformerBlock(torch.nn.Module):
         # x = x + self.dropout(self.merge_proj(x_concat))
 
         # --- only attention branch
-        cls_token, x_concat = torch.split(x2, [1, x2.size(1) - 1], dim=1)
-        x_tmp = x_concat.transpose(1, 2)
-        x_tmp = self.depthwise_conv_fusion(x_tmp)
-        x_tmp = x_tmp.transpose(1, 2)
-        x_tmp = torch.cat([cls_token, x_tmp], dim=1)
-        x = x + self.dropout(self.merge_proj(x2 + x_tmp))
+        # cls_token, x_concat = torch.split(x2, [1, x2.size(1) - 1], dim=1)
+        # x_tmp = x_concat.transpose(1, 2)
+        # x_tmp = self.depthwise_conv_fusion(x_tmp)
+        # x_tmp = x_tmp.transpose(1, 2)
+        # x_tmp = torch.cat([cls_token, x_tmp], dim=1)
+        # x = x + self.dropout(self.merge_proj(x2 + x_tmp))
 
 
         if self.feed_forward is not None:
@@ -852,3 +726,9 @@ class EbranchformerBlock(torch.nn.Module):
             return (x, pos_emb), mask
 
         return x, mask
+
+if __name__ == "__main__":
+    model = EbranchformerBlock(input_size = 144, output_size = 144, attention_heads = 4, dim_head = int(144/4))
+    x = torch.rand(20, 201, 144)
+    x = model(x, mask=None)
+    print(x[0].shape)
