@@ -10,6 +10,7 @@ from MultiConvFormer import MultiConvformerBlock
 from pooling import MultiHeadAttentionPooling
 from fairseq.fairseq import checkpoint_utils
 from types import SimpleNamespace
+from thop import profile
 
 def sinusoidal_embedding(n_channels, dim):
     pe = torch.FloatTensor([[p / (10000 ** (2 * (i // 2) / dim)) for i in range(dim)]
@@ -235,16 +236,6 @@ class Model(nn.Module):
        
         return out, attn_score
 
-def count_parameters(model):
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    
-    print(f"--- Model Statistics ---")
-    print(f"Total Params: {total_params:,}")
-    print(f"Trainable Params: {trainable_params:,}")
-    print(f"Non-trainable Params: {total_params - trainable_params:,}")
-    print(f"------------------------")
-
 if __name__ == "__main__":
     args = SimpleNamespace(
         emb_size=256,
@@ -252,4 +243,7 @@ if __name__ == "__main__":
         heads=8
     )
     model = Model(args, "cuda")
-    count_parameters(model)
+    x = torch.rand((2, 66400)).to("cuda")
+    macs, params = profile(model, inputs=(x,))
+    print(params)
+    print(macs*2)
