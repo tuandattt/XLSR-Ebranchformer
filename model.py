@@ -223,7 +223,7 @@ class Model(nn.Module):
         self.selu = nn.SELU(inplace=True)
         #self.conformer=MySwitchTransformer(emb_size=args.emb_size, n_encoders=args.num_encoders, heads=args.heads)
         self.conformer = MyEbranchformer(emb_size = args.emb_size, n_encoders = args.num_encoders, heads = args.heads)
-        #self.conformer = ClassifierNoClassToken(emb_size = args.emb_size, n_encoders = args.num_encoders, heads = args.heads)
+        #self.conformer = MyConformer(emb_size = args.emb_size, n_encoders = args.num_encoders, heads = args.heads)
     def forward(self, x):
         #-------pre-trained Wav2vec model fine tunning ------------------------##
         x_ssl_feat = self.ssl_model.extract_feat(x.squeeze(-1))
@@ -242,7 +242,8 @@ if __name__ == "__main__":
         num_encoders=6,
         heads=8
     )
-    model = Model(args, "cuda")
+    model = Model(args, "cuda").to("cuda")
+    model.eval()
     x = torch.rand((2, 66400)).to("cuda")
     macs, params = profile(model, inputs=(x,))
     print(params)
