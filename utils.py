@@ -12,32 +12,32 @@ def pad(x, max_len):
     num_repeats = int(max_len / x_len)+1
     padded_x = np.tile(x, (1, num_repeats))[:, :max_len][0]
     return padded_x	
-
 def read_metadata(dir_meta, is_eval=False):
     d_meta = {}
-    file_list=[]
+    file_list = []
+
     with open(dir_meta, 'r') as f:
-         l_meta = f.readlines()
-    
-    if (is_eval):
-        if "ASVspoof2019.LA.cm.eval.trl.txt" in dir_meta:
-            for line in l_meta:
-                _,key,_,_,label = line.strip().split()
-                file_list.append(key)
-            return file_list
-        else:
-            for line in l_meta:
-                key= line.strip()
-                file_list.append(key)
-            return file_list
+        l_meta = f.readlines()
+
+    if is_eval:
+        for line in l_meta:
+            parts = line.strip().split()
+            if len(parts) == 0:
+                continue
+            key = parts[0]
+            file_list.append(key)
+        return file_list
+
     else:
         for line in l_meta:
-             _,key,_,_,label = line.strip().split()
-             
-             file_list.append(key)
-             d_meta[key] = 1 if label == 'bonafide' else 0
-        return d_meta,file_list
-
+            parts = line.strip().split()
+            if len(parts) < 5:
+                continue
+            _, key, _, _, label = parts[:5]
+            file_list.append(key)
+            d_meta[key] = 1 if label == 'bonafide' else 0
+        return d_meta, file_list
+    
 def read_metadata15(dir_meta, is_eval=False):
     d_meta = {}
     file_list=[]
