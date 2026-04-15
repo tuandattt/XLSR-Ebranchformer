@@ -83,6 +83,8 @@ class Attention(nn.Module):
         self.ht_norm = nn.LayerNorm(dim_head)
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_heads, dim))
     
+        self.attn = None
+    
     def forward(self, x, mask=None):
         B, N, C = x.shape
 
@@ -101,6 +103,8 @@ class Attention(nn.Module):
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
+        
+        self.attn = attn.detach()
         # attn = self.attn_drop(attn)
         
         x = (attn @ v).transpose(1, 2).reshape(B, N+self.num_heads, C)
@@ -240,6 +244,6 @@ class Conformer(nn.Module):
     def forward(self, x):
 
         for block in self.layers:
-            x = block(x)
+            x,_ = block(x)
 
         return x

@@ -8,7 +8,7 @@ from torch import Tensor
 from Ebranchformer import EbranchformerBlock
 from MultiConvFormer import MultiConvformerBlock
 from pooling import MultiHeadAttentionPooling
-from fairseq.fairseq import checkpoint_utils
+from fairseq_dir.fairseq import checkpoint_utils
 from types import SimpleNamespace
 from thop import profile
 
@@ -122,7 +122,7 @@ class ClassifierNoClassToken(nn.Module):
 class SSLModel(nn.Module): #W2V
     def __init__(self, device):
         super(SSLModel, self).__init__()
-        cp_path = '/home/stud_dat/tcm_add/checkpoint/xlsr2_300m.pt'   # Change the pre-trained XLSR model path. 
+        cp_path = '/home4/datpt/data_spoof/xlsr2_300m.pt'   # Change the pre-trained XLSR model path. 
         model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([cp_path])
         self.model = model[0]
         self.device=device

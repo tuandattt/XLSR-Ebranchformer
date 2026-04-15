@@ -21,13 +21,17 @@ class Dataset_train(Dataset):
         try:
             X, fs = sf.read(self.base_dir+'flac/'+utt_id+'.flac')
         except:
-            X, fs = librosa.load(self.base_dir+'flac/'+utt_id+'.flac', sr=16000)
+            try:
+                X, fs = librosa.load(path, sr=16000)
+            except Exception as e:
+                print(f"[ERROR] Cannot read file: {path}")
+                print(f"Reason: {e}")
+                raise e
         Y=process_Rawboost_feature(X, fs, self.args, self.algo)
         X_pad= pad(Y, self.cut)
         x_inp= Tensor(X_pad)
         target = self.labels[utt_id]
         return x_inp, target
-
 class Dataset_eval(Dataset):
     def __init__(self, list_IDs, base_dir, track):
         '''self.list_IDs	: list of strings (each string: utt key),'''
@@ -39,13 +43,14 @@ class Dataset_eval(Dataset):
         return len(self.list_IDs)
     def __getitem__(self, index):  
         utt_id = self.list_IDs[index]
-        try:
-            X, fs = sf.read(self.base_dir+'flac/'+utt_id+'.flac')
-        except:
-            X, fs = librosa.load(self.base_dir+'flac/'+utt_id+'.flac', sr=16000)
-        X_pad = pad(X,self.cut)
+        path = self.base_dir + '/' + utt_id + '.flac'
+
+        X,fs = librosa.load(path, sr=16000) 
+
+
+        X_pad = pad(X, self.cut)
         x_inp = Tensor(X_pad)
-        return x_inp, utt_id   
+        return x_inp, utt_id
 
 class Dataset_train_var(Dataset):
     def __init__(self, args, list_IDs, labels, base_dir, algo):
