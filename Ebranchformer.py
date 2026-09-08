@@ -687,32 +687,6 @@ class EbranchformerBlock(torch.nn.Module):
         x_tmp = torch.cat([cls_token, x_tmp], dim=1)
         x = x + self.dropout(self.merge_proj(x_concat + x_tmp))
 
-        #--- Weighted ave
-        # score1 = self.pooling_proj1(x1).transpose(1, 2) / self.size**0.5
-        # score1 = torch.softmax(score1, dim=-1)
-        # pooled1 = torch.matmul(score1, x1).squeeze(1)
-        # weight1 = self.weight_proj1(pooled1)
-
-        # score2 = self.pooling_proj2(x2).transpose(1, 2) / self.size**0.5
-        # score2 = torch.softmax(score2, dim=-1)
-        # pooled2 = torch.matmul(score2, x2).squeeze(1)
-        # weight2 = self.weight_proj2(pooled2)
-
-        # merge_weights = torch.softmax(torch.cat([weight1, weight2], dim=-1), dim=-1)
-        # merge_weights = merge_weights.unsqueeze(-1).unsqueeze(-1)
-        # w1, w2 = merge_weights[:, 0], merge_weights[:, 1]
-        
-        # x_concat = w1 * x1 + w2 * x2
-        # x = x + self.dropout(self.merge_proj(x_concat))
-
-        # --- only attention branch
-        # cls_token, x_concat = torch.split(x2, [1, x2.size(1) - 1], dim=1)
-        # x_tmp = x_concat.transpose(1, 2)
-        # x_tmp = self.depthwise_conv_fusion(x_tmp)
-        # x_tmp = x_tmp.transpose(1, 2)
-        # x_tmp = torch.cat([cls_token, x_tmp], dim=1)
-        # x = x + self.dropout(self.merge_proj(x2 + x_tmp))
-
 
         if self.feed_forward is not None:
             # feed forward module
